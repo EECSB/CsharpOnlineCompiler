@@ -793,7 +793,7 @@
         [JsonConstructor]
         public AppState() //Needed for JSON deserializer.
         {
-            gunNodes = new List<string> { "http://localhost:8765/gun" /*, "https://gun-manhattan.herokuapp.com/gun"*/ }; //TODO uncomment
+            gunNodes = new List<string> { "https://gun-manhattan.herokuapp.com/gun" /*local dev. node , "http://localhost:8765/gun"*/ };
         } 
 
         public AppState(Blazored.LocalStorage.ILocalStorageService localStorage)
@@ -801,7 +801,7 @@
             workspace = new Guid().ToString();
             workspace = "said"; //Temp. 
             editorText = DefaultEditorText;
-            gunNodes = new List<string> { "http://localhost:8765/gun" /*, "https://gun-manhattan.herokuapp.com/gun"*/ };
+            gunNodes = new List<string> { "https://gun-manhattan.herokuapp.com/gun" /*local dev. node , "http://localhost:8765/gun"*/ };
 
             OnChange += async () =>
             {
