@@ -1,0 +1,1716 @@
+﻿@page "/testcomponent"
+
+@using Microsoft.CodeAnalysis;
+@using Microsoft.CodeAnalysis.CSharp;
+@using System.Reflection;
+@using System.Collections.Immutable;
+@using System.Net.Http.Json;
+@using System.Text.Json;
+@using System.Text.Json.Serialization;
+@using System;
+@using System.IO;
+@using System.IO.Compression;
+@using System.Timers;
+@using System.Threading.Tasks;
+@using System.Runtime.Loader;
+@using Microsoft.Extensions.Logging.Abstractions;
+@using System.Web;
+
+@using NuGet.Configuration;
+@using NuGet.Protocol.Core.Types;
+@using NuGet.Protocol.Core;
+@using NuGet.Protocol;
+@using NuGet.Versioning;
+@using NuGet.PackageManagement;
+@using NuGet.Packaging;
+
+@using CsharpOnlineCompiler.Code;
+@using CsharpOnlineCompiler.Code.NugetLoader.Response_Models;
+@using CsharpOnlineCompiler.Code.NugetLoader;
+
+@using CsharpOnlineCompiler.Code.CompilerCode;
+@using CompilationResult = CsharpOnlineCompiler.Code.CompilerCode.CompilationResult;
+
+
+@inherits LayoutComponentBase;
+@inject HttpClient client;
+@inject IJSRuntime JSR;
+@inject Blazored.LocalStorage.ILocalStorageService localStorage;
+@inject NavigationManager Navigation;
+
+<PageTitle>C# Online Compiler</PageTitle>
+
+<div class="wrapper">
+
+    <!-- ////////////////////////////////////////// Top Bar ////////////////////////////////////////////// -->
+
+    <div class="row row1">
+        <div class="col" style="width: -webkit-fill-available;">
+            <h1>C# Online Compiler</h1>
+        </div>
+
+        <div id="aboutButton" div class="col">
+            <div style="display: flex; justify-content: flex-end; padding-right: 1em;">
+                <div @onclick="() => { aboutComponent.Show = false; showShare = true; workspaceWindow = ShowWindow.MyWorkspaces; }" style="padding-right: 2em;">
+                    @if (loggedIn)
+                    {
+                        <span>My Workspaces</span>
+                    }
+                    else
+                    {
+                        <span>Login</span>
+                    }
+                </div>
+                <div @onclick="() => { aboutComponent.Show = !aboutComponent.Show; showShare = false; }" style="display: flex; align-items: center;">About</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ///////////////////////////////////////////////////////////////////////////////////////////////// -->
+
+
+
+    <!-- /////////////////////////////////////// Pop-up Window /////////////////////////////////////////// -->
+
+    <CsharpOnlineCompiler.Components.About @ref="aboutComponent"/>
+
+    @if (showShare)
+    {
+        <div class="popupDiv popupZIndex_1">
+            <div class="col">
+
+                <div class="row mb-5">
+                    <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
+                        Workspace Options
+                    </div>
+
+                    <div class="col d-flex justify-content-end">
+                        <button style="padding: 3px 10px; height: fit-content;" @onclick="() => { showShare = !showShare; }">X</button>
+                    </div>
+                </div>
+
+
+                @if (workspaceWindow == ShowWindow.MyWorkspaces)
+                {
+                    <div class="row mb-3" style="justify-content: center;">
+                        Editor contents and settings are copied to the clipboard as a URL parameter.
+                    </div>
+
+                    <div class="row" style="justify-content: center;">
+                        <div class="mb-4" style="width: max-content;">
+                            <button @onclick="shareByUrl"><img src="./assets/copy.png" style="padding-right: 0.5em;">@urlButtonText</button>
+                        </div>
+                    </div>
+
+                    <hr />
+                }
+
+                <div class="row ">
+
+                    <div class="row mt-4 mb-2" style="justify-content: center;">
+                        <span style="width: 80%;">
+                            The account and its data are saved to the <a target="_blank" href="https://github.com/amark/gun">GUN.js</a> decentralized database. This enables you to save your workspace, share it, or collaborate in real time with other people.
+                            <b>Warning: I'm not hosting a relay node, so any data you save is reliant on public nodes, which may not store your data indefinitely.</b> You can add additional nodes under: Gun Nodes +/-
+                        </span>
+                    </div>
+
+                    <!-- Hidden login for password manager because blazor has problems with @onclick if inside a submit form or we get a redirect/new tab opened otherwise -->
+                    <div style="visibility: hidden; height: 0;"> <!-- Set hidden with 0 height because blazor will not even include the element on the page if display: none; -->
+                        <iframe name="loginFrame" style="display: none;"></iframe>
+                        <form id="loginForm" method="POST" action="/fake-login" target="loginFrame" autocomplete="on">
+                            <input id="nativeUsername" type="text" placeholder="username" autocomplete="username" >
+                            <input id="nativePassword" type="password" placeholder="password" autocomplete="current-password" >
+
+                            <button type="submit">Sign In</button>
+                            <button type="submit">Register</button>
+                        </form>
+                    </div>
+
+                    <div class="row" style="justify-content: center; padding: 1em;">
+                        <CsharpOnlineCompiler.Components.QR @ref="qrCodeComponent" />
+
+                        @if(!loggedIn && workspaceWindow != ShowWindow.LiveShare)
+                        {
+                            <div class="col" style="max-width: 16em;">
+
+                                 <div class="row mb-2">
+                                    <input style="width: -webkit-fill-available;" type="text" @bind-value="@userName" placeholder="user name" autocomplete="username"></input>
+                                </div>
+
+                                <div class="row mb-2">
+                                    <input style="width: -webkit-fill-available;" type="password" @bind-value="@password" placeholder="password" autocomplete="current-password"></input>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col text-center">
+                                        <button class="mb-2" style="width: 60%; border-radius: 0;" @onclick="signIn">Sign In</button>
+                                        <button class="mb-2" style="width: 38%; border-radius: 0;" @onclick="register">Register</button>
+                                    </div>
+                                </div>
+
+                                <br>
+
+                                <div class="row">
+
+                                    <div class="row" style="font-size: 1em; margin-bottom: 0.4em;">
+                                        <div class="col-5"><b>Gun Nodes</b></div>
+                                        <div class="col" >
+                                            <button style="padding: 0px 5px; background-color: var(--button-color-green);" @onclick="() => { showGunNodes = !showGunNodes; }">+/-</button>
+                                        </div>
+                                    </div>
+
+                                    @if (showGunNodes)
+                                    {
+                                        <div class="row" style="margin-bottom: 15px;">
+                                            <div class="col-10">
+                                                <input type="text" @bind="newGunNode" style="width: -webkit-fill-available; height: -webkit-fill-available; margin-right: 1em;" />
+                                            </div>
+                                            <div class ="col-2">
+                                                <button style="padding: 0px 5px; background-color: var(--button-color-green);" @onclick="() => { state.AddGunNode(newGunNode); }">+</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <ul style="list-style: none;">
+                                                @foreach (var node in state.GunNodes)
+                                                {
+                                                    <li style="border-bottom: solid 1px black; padding: 5px;">
+                                                        @node
+                                                        <button style="padding: 0px 5px; margin: 2px;" @onclick="() => { state.RemoveGunNode(node); }">X</button>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+
+                                </div>
+
+                            </div>
+                        }
+                        else if (loggedIn && workspaceWindow == ShowWindow.MyWorkspaces)
+                        {
+                                <div class="row mb-2">
+                                    <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold; max-width: fit-content; margin-right: 0.5em;">
+                                        My Workspaces
+                                    </div>
+                                    <div class="col d-flex justify-content-start" style="height: 1.4em;">
+                                        <img style="margin-right: 0.5em;" @onclick="loadWorkspaces" src="./assets/reset.png" title="Refresh workspaces list" />
+                                        <img style="margin-right: 0.5em;" @onclick="addNew" src="./assets/add.png" title="Add new workspace" />
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <ul id="workspaceList">
+                                        @foreach (string workspace in workspaces)
+                                        {
+                                            <li style="@(workspace == state.Workspace ? "background-color: lightgreen;" : "")">
+                                                <div class="row" >
+                                                    <div class="col-4">
+                                                        @workspace
+                                                    </div>
+                                                    <div class="col">
+                                                        <button style="margin-right 0.5em; background-color: var(--button-color-green);" @onclick="async () => await loadWorkspace(workspace)">Open</button>
+                                                        @if(workspace == state.Workspace)
+                                                        {
+                                                            <button style="margin-right 0.5em;" @onclick="sharePrivate"><img src="./assets/copy.png" style="padding-right: 0.5em; width: auto; height: 1.3em;">@workspaceUrlButtonText</button>
+                                                            <button style="margin-right 0.5em;" @onclick="shareQRCode"><img src="./assets/qr.png" style="padding-right: 0.5em; width: auto; height: 1.3em;">Share QR Code</button>
+                                                            <button style="margin-right 0.5em;" @onclick="() => { showShare = true; workspaceWindow = ShowWindow.LiveShare; }"><img src="./assets/liveShare.png" style="padding-right: 0.5em; width: auto; height: 1.3em;">Live Share</button>
+                                                        }
+                                                        <button @onclick="async () => await delete(workspace)">X</button>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+
+                                <div class="row">
+
+                                    <div class="col">
+                                        <div class="row" style="font-size: large; font-weight: bold;">
+                                            Current Workspace
+                                        </div>
+
+                                        <div class="row" style="padding: 1em;">
+                                            <div class="row" style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: fit-content;"><b>My Public Key:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@userPublicKey" readonly/>
+                                                </div>
+                                            </div>
+                                            <div class="row" style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: fit-content;"><b>Workspace Name:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@state.Workspace"/>
+                                                    <img style="padding-left: 0.5em;" @onclick="saveAs" src="./assets/save.png" title="Save current workspace as">
+                                                </div>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col" style="max-width: fit-content;"><b>Encryption Key:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@state.ShareKey" readonly/>
+                                                    <img style="padding-left: 0.5em;" @onclick="regenerateSharekey" title="regenerate key" src="./assets/reset.png">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col">
+                                        <div class="row" style="font-size: large; font-weight: bold;">
+                                            Open Other Workspace
+                                        </div>
+                                        
+                                        <div class="row" style="padding: 1em;">
+                                            <div class="row" style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: fit-content;"><b>Owner Public Key:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@PublicKey"/>
+                                                </div>
+                                            </div>
+                                            <div class="row" style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: fit-content;"><b>Workspace Name:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@PublicID"/>
+                                                </div>
+                                            </div>
+                                            <div class="row"style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: fit-content;"><b>Encryption Key:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" @bind-value="@ShareKey"/>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="row" style="padding: 1em;">
+                                            <div class="col" style="max-width: fit-content;">
+                                                <button style="background-color: var(--button-color-green);" @onclick="async () => { await loadPrivate(); }">Open</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            
+                        }
+
+                        @if(workspaceWindow == ShowWindow.LiveShare)
+                        {
+                            <!--  *************************** Toggle between hosting and joining a workspace *************************** -->
+                            
+                            <div class="row" style="justify-content: center; margin-bottom: 3em; width: max-content;">
+                                <div style="display: flex;">
+                                    @if (streamChangesOther)
+                                    {
+                                        @if (streamChanges)
+                                        {
+                                            <button style="background-color: darkgray;" title="Leve live sharing to share your workspace with others.">Host</button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="() => { streamChangesOther = false; StateHasChanged(); }">Host</button>
+                                        }
+                                        <button @onclick="() => { streamChangesOther = true; StateHasChanged(); }" style="background-color: green;">Join</button>
+                                    }
+                                    else
+                                    {
+                                        <button @onclick="() => { streamChangesOther = false; StateHasChanged(); }" style="background-color: green;">Host</button>
+                                        @if (streamChanges)
+                                        {
+                                            <button style="background-color: darkgray;" title="Stop live sharing your workspace to join another live share.">Join</button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="() => { streamChangesOther = true; StateHasChanged(); }">Join</button>
+                                        }
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- ******************************************************************************************************* -->
+
+                            @if (streamChangesOther)
+                            {
+                                <div class="row" style="margin-bottom: 3em;">
+                                    <div class="row removeCenterOnMobile" style="margin-bottom: 0.5em;">
+                                        <div class="col" style="max-width: 7em;"><b>Live Share ID:</b></div>
+                                        <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                            <input type="text" @bind-value="@LiveShareID"/>
+                                        </div>
+                                    </div>
+                                    <div class="row removeCenterOnMobile">
+                                        <div class="col" style="max-width: 7em;"><b>Share Key:</b></div>
+                                        <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                            <input type="text" @bind-value="@ShareKey"/>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row" style="justify-content: center;">
+                                    <div style="display:flex; justify-content: center;">
+                                        @if (streamChanges)
+                                        {
+                                            <button @onclick="toggleLiveShare" style="width: max-content;">Leave</button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="toggleLiveShare" style="width: max-content;">Join</button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="row" style="justify-content: center;">
+                                    @if (streamChanges)
+                                    {
+                                        <div class="row" style="margin-bottom: 1em;">
+                                            <div class="row removeCenterOnMobile" style="margin-bottom: 0.5em;">
+                                                <div class="col" style="max-width: 7em;"><b>Live Share ID:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" value="@state.Workspace" readonly />
+                                                </div>
+                                            </div>
+                                            <div class="row removeCenterOnMobile">
+                                                <div class="col" style="max-width: 7em;"><b>Share Key:</b></div>
+                                                <div class="col" style="max-width: fit-content; padding-left: 1em;">
+                                                    <input type="text" value="@state.ShareKey" readonly />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="row" style="justify-content: center; margin-bottom: 2em;">
+                                            <div class="col" style="max-width: fit-content; margin: 0 1em 1em 1em;"><button class="iconButton" @onclick="() => liveShareQRCode()"><img src="./assets/qr.png">Share via QR Code</button></div>
+                                            <div class="col" style="max-width: fit-content; margin-bottom: 1em;"><button class="iconButton" @onclick="() => liveShareURL()"><img src="./assets/copy.png">@urlButtonText</button></div>
+                                        </div>
+
+                                        <div style="display:flex; justify-content: center;">
+                                            <button class="iconButton" @onclick="toggleLiveShare"><img src="./assets/stop.png">Stop Live Share</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div style="display:flex; justify-content: center;">
+                                            <button class="iconButton" @onclick="toggleLiveShare"><img src="./assets/play.png">Start Live Share</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        }
+
+                        @if(loggedIn)
+                        {
+                            <hr style="margin: 2rem 0;">
+
+                            <div class="row" style="justify-content: center;">
+                                <div class="col" style="max-width: fit-content;">
+                                    <button class="mt-2" @onclick="signOut">Sign Out</button>
+                                </div>
+                            </div>
+                        }
+
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- ///////////////////////////////////////////////////////////////////////////////////////////////// -->
+
+
+
+    <!-- //////////////////////// Main Row (sidebar L -- editor -- sidebar R) //////////////////////////// -->
+
+    <div class="row row2">
+
+        <div id="optionsSidebar" class="col-2">
+
+            <div class="row">
+                <b>Language Version:</b>
+                <div>
+                    <select @bind="languageVersion">
+                        @foreach (var languageVersion in Enum.GetValues(typeof(LanguageVersion)))
+                        {
+                            <option value="@languageVersion">@languageVersion.ToString()</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="row" style="padding: 10px 0px;">
+                <b>Optimization Level:</b>
+                <div>
+                    <select @bind="optimizationLevel">
+                        @foreach (var optimizationLevel in Enum.GetValues(typeof(OptimizationLevel)))
+                        {
+                            <option value="@optimizationLevel">@optimizationLevel.ToString()</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="row" style="padding: 10px 0px;">
+                <div>
+                    <b>Run code on change</b>
+                </div>
+                <div>
+                    <input id="runCodeOnChange" type="checkbox" @bind="runCodeOnChange" />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="row mb-3">
+                    <div class="col" style="max-width: fit-content; padding-right: 1em;">
+                        <b>Nuget Packages</b>
+                    </div>
+                    <div class="col" style="max-width: fit-content;">
+                        @if (loadingNugetPackages)
+                        {
+                            <div class="loader"></div>
+                        }
+                    </div>
+                </div>
+
+                <div id="nugetPackageSection">
+
+                    <input placeholder="Search For Nuget Package" type="text" value="@nugetQueryTextBox" @oninput="(e) => queryNugetPackage(e.Value.ToString())">
+
+                    <div>
+                        <ul style="max-height: 25em;">
+                            <li></li>
+                            @foreach (var item in suggestions)
+                            {
+                                <li class="nugetPackageItem" @onclick="() => selectNugetPackage(item)">@item</li>
+                            }
+
+                            @foreach (var item in versions)
+                            {
+                                <li class="nugetPackageItem" @onclick="async () => {
+                                    loadingNugetPackages = true; 
+                                    await installNugetPackage(item); 
+                                    loadingNugetPackages = false;
+                                }">
+                                    @item.Version
+                                </li>
+                            }
+
+                            <li style="padding-top: 10px;"><b>Installed:</b></li>
+                            @foreach (var package in state.AddedNugetPackages)
+                            {
+                                <li class="nugetPackageItemInstalled">
+                                    <span>@package.Key</span>
+                                    <span class="nugetPackageRemoveButton" @onclick="() => removeNugetPackage(package.Key)">
+                                        <b>X</b>
+                                    </span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="row">
+            </div>
+
+        </div>
+
+
+
+        <div id="mainCenter" class="col-8">
+
+            <div id="editorToolbar" class="row">
+
+                <img @onclick="async e => await runCode()" src="./assets/play.png" title="Run code"/>
+
+                <div class="col-1">
+                    @if (showLoader)
+                    {
+                        <div class="loader"></div>
+                    }
+                </div>
+
+                <div class="col"></div>
+
+                <img @onclick="save" src="./assets/save.png" title="Save workspace"/>
+
+                <img @onclick="resetEditorContent" src="./assets/reset.png" title="Reset editor contents"/>
+
+                <img @onclick="downloadEditorContent" src="./assets/download.png" title="Download editor contents"/>
+
+                <img @onclick="() => { showShare = true; workspaceWindow = ShowWindow.MyWorkspaces; }" src="./assets/workspaces.png" title="Show my workspaces" />
+
+                <img @onclick="() => { showShare = true; workspaceWindow = ShowWindow.MyWorkspaces; }" src="./assets/share.png" title="Share my workspace"/>
+
+                <img @onclick="() => { showShare = true; workspaceWindow = ShowWindow.LiveShare; }" src="./assets/liveShare.png" title="Colaborate in the workspace"/>
+
+            </div>
+
+            <div id="editorWrapper" class="row">
+                <div id="codeEditor"></div>
+            </div>
+
+            <div id="messageList" class="row">
+
+                <div class="col">
+
+                    <div id="messageSelection" class="row">
+                        <div>
+                            <button id="button_0" @onclick="() => { toggleMessageButtons(0); }">Warning</button>
+                            <button id="button_1" @onclick="() => { toggleMessageButtons(1); }">Error</button>
+                            <button id="button_2" @onclick="() => { toggleMessageButtons(2); }">Hidden</button>
+                            <button id="button_3" @onclick="() => { toggleMessageButtons(3); }">Info</button>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <ul>
+                            @foreach (var message in messages)
+                            {
+                                bool showMessage = true;
+                                switch (message.Severity)
+                                {
+                                    case DiagnosticSeverity.Warning:
+                                        showMessage = showDiagnosticMessages[0];
+                                        break;
+                                    case DiagnosticSeverity.Error:
+                                        showMessage = showDiagnosticMessages[1];
+                                        break;
+                                    case DiagnosticSeverity.Hidden:
+                                        showMessage = showDiagnosticMessages[2];
+                                        break;
+                                    case DiagnosticSeverity.Info:
+                                        showMessage = showDiagnosticMessages[3];
+                                        break;
+                                }
+
+                                if (showMessage)
+                                {
+                                    <li>@message.Severity: @message.Message</li>
+                                }
+                            }
+
+                            @foreach (var outputString in outputs)
+                            {
+                                <li>@outputString</li>
+                            }
+                        </ul>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+
+        <div id="editorSidebar" class="col-2">
+        </div>
+
+    </div>
+
+    <!-- ///////////////////////////////////////////////////////////////////////////////////////////////// -->
+
+
+
+    <!-- ///////////////////////////////////////// Bottom Row //////////////////////////////////////////// -->
+
+    <div class="row row3 custom-border">
+        <!-- Content for the third row -->
+    </div>
+
+    <!-- ///////////////////////////////////////////////////////////////////////////////////////////////// -->
+</div>
+
+@code {
+    #region ///////////////////////////////// Parameters //////////////////////////////////////////
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "SerializedEditorState")]
+    public string? SerializedEditorState { get; set; } = "";
+
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "WorkspaceName")]
+    public string? WorkspaceName { get; set; } = "";
+
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "PublicID")]
+    public string? PublicID { get; set; } = "";
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "LiveShareID")]
+    public string? LiveShareID { get; set; } = "";
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "PublicKey")]
+    public string? PublicKey { get; set; } = "";
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "ShareKey")]
+    public string? ShareKey { get; set; } = "";
+
+    #endregion ////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    #region /////////////////////////////// Initialization ////////////////////////////////////////
+
+    bool loadPrivateFromURL = false;
+    protected override async Task OnInitializedAsync()
+    {
+        compiler = new Compiler(client);
+        nugetLoader = new NugetLoader(compiler.ExistingReferences, compiler.References, client);
+
+        //This could be written a bit better but good enough for now.
+        if (!string.IsNullOrEmpty(PublicID) && !string.IsNullOrEmpty(PublicKey) && !string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && string.IsNullOrEmpty(SerializedEditorState))
+        {
+            loadPrivateFromURL = true;
+            //await loadPrivate(); //moved into OnAfterRenderAsync so that initGun() is called first.
+        }
+        else if (!string.IsNullOrEmpty(LiveShareID) && string.IsNullOrEmpty(PublicKey) && !string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && string.IsNullOrEmpty(SerializedEditorState))
+        {
+            streamChangesOther = true;
+        }
+        else if (string.IsNullOrEmpty(PublicID) && string.IsNullOrEmpty(PublicKey) && string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && !string.IsNullOrEmpty(SerializedEditorState))
+        {
+            SerializedEditorState = System.Net.WebUtility.UrlDecode(SerializedEditorState);
+
+            var tempState = AppState.Deserialize(SerializedEditorState, localStorage);
+            if (tempState is not null)
+            {
+                prevState = state;
+                state = tempState;
+            }
+            else
+            {
+                await jsInterop.GetConfirmation("Failed to load workspace. Serialized state string got corrupted.");
+            }
+        }
+        else if (string.IsNullOrEmpty(PublicID) && string.IsNullOrEmpty(PublicKey) && string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && string.IsNullOrEmpty(SerializedEditorState))
+        {
+            string storedState = await localStorage.GetItemAsStringAsync("appstate");
+
+            if (string.IsNullOrEmpty(storedState))
+            {
+                prevState = null;
+                state = new AppState(localStorage);
+            }
+            else
+            {
+                var tempState = AppState.Deserialize(storedState, localStorage);
+                if (tempState is not null)
+                {
+                    prevState = state;
+                    state = tempState;
+                }
+                else
+                {
+                    prevState = null;
+                    state = new AppState(localStorage);
+                }
+            }
+        }
+        else
+        {
+            await jsInterop.GetConfirmation("Failed to load workspace because wrong/incompatible parameters were provided in the url.");
+        }
+
+        //Check if any new packages were added(or removed) to the workspace and add/remove them accordingly.
+        await reloadPackages(true);
+
+        selectedPackage = null;
+        selectedPackageVersion = null;
+        versions = Array.Empty<PackageVersion>();
+
+
+
+        //Should create a component that is a button with a timer that changes the text after 3 seconds, but for now this will do.
+        urlButtonTextTimer = new Timer(3000);
+        urlButtonTextTimer.AutoReset = false; // Only trigger once
+        urlButtonTextTimer.Elapsed += (sender, e) => 
+        {
+            urlButtonText = "Share via URL";
+            StateHasChanged();
+        };
+
+        workspaceUrlButtonTextTimer = new Timer(3000);
+        workspaceUrlButtonTextTimer.AutoReset = false; // Only trigger once
+        workspaceUrlButtonTextTimer.Elapsed += (sender, e) => 
+        {
+            workspaceUrlButtonText = "Share link";
+            StateHasChanged();
+        };
+    }
+
+    protected override async void OnAfterRender(bool firstRender)
+    {
+        isFirstRender = firstRender;
+
+        if (firstRender)
+        {
+            jsInterop = new JSInterop(JSR, this);
+
+            await initGun();
+            await jsInterop.SendObjectReference();
+            await jsInterop.InitializeMonaco(state.EditorText, "csharp");
+
+            if (loadPrivateFromURL)
+            {
+                loadPrivateFromURL = false;
+                await loadPrivate();
+            }
+
+            if (streamChangesOther)
+            {
+                await toggleLiveShare();
+            }
+        }
+    }
+
+    #endregion ////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    #region ///////////////////////////////// Variables ///////////////////////////////////////////
+
+    class AppState
+    {
+        public AppState(AppState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            this.shareKey = state.shareKey;
+            this.workspace = state.workspace;
+            this.editorText = state.editorText;
+            this.addedNugetPackages = new Dictionary<string, NugetPackageInfo>(state.AddedNugetPackages);
+            this.gunNodes = new List<string>(state.gunNodes);
+            // Note: OnChange event is not copied; subscribers must re-subscribe as needed.
+        }
+
+        [JsonConstructor]
+        public AppState() //Needed for JSON deserializer.
+        {
+            gunNodes = new List<string> { "http://localhost:8765/gun" /*, "https://gun-manhattan.herokuapp.com/gun"*/ }; //TODO uncomment
+        } 
+
+        public AppState(Blazored.LocalStorage.ILocalStorageService localStorage)
+        {
+            workspace = new Guid().ToString();
+            workspace = "said"; //Temp. 
+            editorText = DefaultEditorText;
+            gunNodes = new List<string> { "http://localhost:8765/gun" /*, "https://gun-manhattan.herokuapp.com/gun"*/ };
+
+            OnChange += async () =>
+            {
+                await localStorage.SetItemAsStringAsync("appstate", this.ToString());
+            };
+        }
+
+        /// <summary>
+        ///
+        /// </summary>
+        /// <param name="SerializedEditorState">Serialized string of the AppState</param>
+        /// <returns>AppState on success and null on deserialization error.</returns>
+        public static AppState? Deserialize(string SerializedEditorState, Blazored.LocalStorage.ILocalStorageService localStorage)
+        {
+            AppState? deserState = null;
+
+            try
+            { 
+                deserState = JsonSerializer.Deserialize<AppState>(SerializedEditorState);
+                deserState.OnChange += async () =>
+                {
+                    await localStorage.SetItemAsStringAsync("appstate", deserState.ToString());
+                };
+            }
+            catch { }
+
+            return deserState;
+        }
+
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns>Serialized string of AppState</returns>
+        public override string ToString()
+        {
+            return JsonSerializer.Serialize
+            (
+                this, 
+                new JsonSerializerOptions() { IncludeFields = true }
+            );
+        }
+
+
+        public event Action? OnChange;
+        private void NotifyStateChanged() => OnChange?.Invoke();
+
+        private string shareKey;
+        [JsonPropertyName("shareKey")]
+        public string ShareKey
+        {
+            get { return shareKey; }
+            set
+            {
+                shareKey = value;
+                NotifyStateChanged();
+            }
+        }
+
+        private string workspace;
+        [JsonPropertyName("workspace")]
+        public string Workspace
+        {
+            get { return workspace; }
+            set
+            {
+                workspace = value;
+                NotifyStateChanged();
+            }
+        }
+
+        private string editorText;
+        [JsonPropertyName("editorText")]
+        public string EditorText
+        {
+            get { return editorText; }
+            set
+            {
+                editorText = value;
+                NotifyStateChanged();
+            }
+        }
+
+
+
+        #region //////////////////////////////// Nuget Packages /////////////////////////////////////////
+
+        public class NugetPackageInfo
+        {
+            [JsonPropertyName("packageId")]
+            public string PackageId { get; set; }
+            [JsonPropertyName("packageVersion")]
+            public string PackageVersion { get; set; }
+
+            public NugetPackageInfo() { }
+
+            public NugetPackageInfo(string packageId, string packageVersion)
+            {
+                PackageId = packageId;
+                PackageVersion = packageVersion;
+            }
+        }
+
+        private Dictionary<string, NugetPackageInfo> addedNugetPackages = new Dictionary<string, NugetPackageInfo>();
+        [JsonPropertyName("addedNugetPackages")]
+        public Dictionary<string, NugetPackageInfo> AddedNugetPackages
+        {
+            get { return addedNugetPackages; }
+            set
+            {
+                addedNugetPackages = value;
+                NotifyStateChanged();
+            }
+        }
+
+        public void AddNugetPackage(string packageId, string packageVersion)
+        {
+            if (!addedNugetPackages.ContainsKey(packageId))
+            { 
+                addedNugetPackages.Add(packageId, new NugetPackageInfo(packageId, packageVersion));
+                NotifyStateChanged();
+            }
+        }
+
+        public void RemoveNugetPackage(string packageId)
+        {
+            if (addedNugetPackages.ContainsKey(packageId))
+            {
+                addedNugetPackages.Remove(packageId);
+                NotifyStateChanged();
+            }
+        }
+
+        #endregion ////////////////////////////////////////////////////////////////////////////////////
+
+
+
+        private List<string> gunNodes;
+        [JsonPropertyName("gunNodes")]
+        public List<string> GunNodes
+        {
+            get { return gunNodes; }
+            set
+            {
+                gunNodes = value;
+                NotifyStateChanged();
+            }
+        }
+
+        public void AddGunNode(string node)
+        {
+            gunNodes.Add(node);
+            NotifyStateChanged();
+        }
+
+        public void RemoveGunNode(string node)
+        {
+            gunNodes.Remove(node);
+            NotifyStateChanged();
+        }
+
+
+
+
+        //[JsonIgnore]
+        [JsonPropertyName("defaultEditorText")]
+        public const string DefaultEditorText =
+@"using System;
+
+public class Program
+{
+    public static void Main()
+    {
+        string text =""Hello World!"";
+
+        Console.WriteLine(text);
+    }
+}";
+    }
+
+    public class Workspace
+    {
+        public string? name { get; set; }
+        public string? appstate {get; set; }
+        public string? createdAt { get; set; }
+    }
+
+
+    private CsharpOnlineCompiler.Components.About aboutComponent;
+    private CsharpOnlineCompiler.Components.QR qrCodeComponent;
+
+    //////////////// UI Variables //////////////
+    private bool isFirstRender = true;
+    private bool showLoader = false;
+    private bool showShare = false;
+    private bool loggedIn = false;
+    private bool showGunNodes = false;
+    private bool loadingNugetPackages = true;
+
+
+    private ShowWindow workspaceWindow = ShowWindow.MyWorkspaces;
+    public enum ShowWindow
+    {
+        LiveShare,
+        MyWorkspaces
+    }
+
+
+    private string urlButtonText = "Share via URL";
+    private static Timer? urlButtonTextTimer;
+
+    private string workspaceUrlButtonText = "Share link";
+    private static Timer? workspaceUrlButtonTextTimer;
+
+
+    ///////////// Control variables ////////////
+    private LanguageVersion languageVersion = LanguageVersion.Latest;
+    private OptimizationLevel optimizationLevel = OptimizationLevel.Debug;
+    bool[] showDiagnosticMessages = new bool[4] { true, true, true, true };
+    bool runCodeOnChange = false;
+
+
+    ///////////// Nuget variables /////////////
+    private string nugetQueryTextBox = "";
+    IEnumerable<string> suggestions = Array.Empty<string>();
+    IEnumerable<PackageVersion> versions = Array.Empty<PackageVersion>();
+    PackageData selectedPackage = null;
+    PackageVersion selectedPackageVersion = null;
+
+
+    ///////////// Other variables /////////////
+    private AppState state = new AppState();
+    private AppState? prevState = null;
+    private JSInterop jsInterop;
+    private Compiler compiler;
+    private NugetLoader nugetLoader;
+
+
+    //////////// Editor and output ////////////
+    List<string> outputs = new List<string>();
+    private List<CompilationResult.CompilationMessage> messages = new List<CompilationResult.CompilationMessage>();
+
+
+    //Gun
+    List<string> workspaces = new List<string>();
+    List<string> otherWorkspaces = new List<string>();
+
+
+    #endregion ////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    #region ///////////////////////////////// UI Methods //////////////////////////////////////////
+
+    private void toggleMessageButtons(int buttonID)
+    {
+        showDiagnosticMessages[buttonID] = !showDiagnosticMessages[buttonID];
+
+        if (showDiagnosticMessages[buttonID])
+        {
+            jsInterop.StyleElementByID($"button_{buttonID}", "background-color", "#F25958");
+        }
+        else
+        {
+            jsInterop.StyleElementByID($"button_{buttonID}", "background-color", "#FFAFAE");
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion ////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    #region /////////////////////////////////// Methods //////////////////////////////////////////
+
+
+    #region Gun.js persistence, comms
+
+    private string userPublicKey = "";
+    private string userName = "";
+    private string password = "";
+
+    private bool streamChanges = false;
+    private bool changeFromStream = false;
+    private bool streamChangesOther = false;
+
+    private string newGunNode = "";
+    
+
+
+    private async Task shareByUrl()
+    {
+        string appStateString = state.ToString();
+        string urlEncodedAppStateString = System.Net.WebUtility.UrlEncode(appStateString);
+        string url = $"{Navigation.BaseUri}?SerializedEditorState={urlEncodedAppStateString}";
+
+        await jsInterop.CopyToClipboard(url);
+
+        urlButtonText = "Copied";
+        urlButtonTextTimer?.Start();
+    }
+
+    private void liveShareQRCode()
+    {
+        qrCodeComponent.GenerateQRCode($"{Navigation.BaseUri}?LiveShareID={HttpUtility.UrlEncode(state.Workspace)}&ShareKey={HttpUtility.UrlEncode(state.ShareKey)}");
+    }
+
+    private async Task liveShareURL()
+    {
+        await jsInterop.CopyToClipboard($"{Navigation.BaseUri}?LiveShareID={HttpUtility.UrlEncode(state.Workspace)}&ShareKey={HttpUtility.UrlEncode(state.ShareKey)}");
+
+        urlButtonText = "Copied";
+        urlButtonTextTimer?.Start();
+    }
+
+    private async Task shareQRCode()
+    {
+        string url = await sharePrivateHelper();
+        qrCodeComponent.GenerateQRCode(url);
+    }
+
+    private async Task<string> sharePrivateHelper()
+    {
+        string serializedAppState = state.ToString();
+
+        await JSR.InvokeVoidAsync("sharePrivate", state.Workspace, state.ShareKey, serializedAppState);
+
+        return $"{Navigation.BaseUri}?PublicID={HttpUtility.UrlEncode(state.Workspace)}&PublicKey={HttpUtility.UrlEncode(userPublicKey)}&ShareKey={HttpUtility.UrlEncode(state.ShareKey)}";
+    }
+
+    private async Task sharePrivate()
+    {
+        string url = await sharePrivateHelper();
+
+        await jsInterop.CopyToClipboard(url);
+
+        workspaceUrlButtonText = "Copied";
+        workspaceUrlButtonTextTimer?.Start();
+    }
+
+    private async Task share()
+    {
+        string serializedAppState = state.ToString();
+
+        string id = state.Workspace;
+        string shareKey = state.ShareKey;
+        if (streamChangesOther)
+        {
+            id = LiveShareID;
+            shareKey = ShareKey;
+        }
+
+        await JSR.InvokeVoidAsync("shareWorkspace", id, shareKey, serializedAppState);
+    }
+
+
+    private async Task regenerateSharekey()
+    {
+        state.ShareKey = await JSR.InvokeAsync<string>("generateShareKey");
+    }
+
+    private async Task addNew()
+    {
+        AppState copiedState = new AppState(state);
+
+        copiedState.Workspace = $"New Workspace {DateTime.Now}";
+        copiedState.ShareKey = await JSR.InvokeAsync<string>("generateShareKey");
+
+        await saveHelper(copiedState);
+    }
+
+    private async Task saveAs()
+    {
+        //Generate new key if saved as a new workspace.
+        if (!workspaces.Contains(state.Workspace))
+            state.ShareKey = await JSR.InvokeAsync<string>("generateShareKey");
+
+        await saveHelper();
+    }
+
+    private async Task save()
+    {
+        if (!loggedIn)
+        {
+            await jsInterop.GetConfirmation("You need to login to save the editor content.");
+            return;
+        }
+
+        //Generate key if not already set.
+        if (string.IsNullOrEmpty(state.ShareKey))
+            state.ShareKey = await JSR.InvokeAsync<string>("generateShareKey");
+
+        await saveHelper();
+    }
+
+    private async Task saveHelper()
+    {
+        await saveHelper(state);
+    }
+
+    private async Task saveHelper(AppState saveState)
+    {
+        string serializedAppState = saveState.ToString();
+
+        await JSR.InvokeVoidAsync("saveWorkspace", saveState.Workspace, serializedAppState);
+
+        //Refresh list of workspaces only if a new workspace was saved/created.
+        if (!workspaces.Contains(saveState.Workspace))
+            await JSR.InvokeVoidAsync("getWorkspaces");
+    }
+
+    private async Task delete(string workspace)
+    {
+        bool confirm = await JSR.InvokeAsync<bool>("confirm", "Confirm removal of the workspace.");
+
+        if (confirm)
+        {
+            await JSR.InvokeVoidAsync("deleteWorkspace", workspace);
+            workspaces.Remove(workspace);
+        }
+    }
+
+
+    private async Task toggleLiveShare()
+    {
+        string id = state.Workspace;
+        string shareKey = state.ShareKey;
+        if (streamChangesOther)
+        {
+            id = LiveShareID;
+            shareKey = ShareKey;
+        }
+
+        if (streamChanges)
+        {
+            await JSR.InvokeVoidAsync("stopStreamGun", id);
+            streamChanges = false;
+        }
+        else
+        {
+            //Make sure the state is saved/synced before starting live share.
+            if(!streamChangesOther) //If host
+                await share();
+
+            await JSR.InvokeVoidAsync("startStreamGun", id, shareKey);
+            streamChanges = true;
+        }
+    }
+
+
+    private async Task initGun()
+    {
+        await JSR.InvokeVoidAsync("initGun", jsInterop.DotNetObjectRef, state.GunNodes);
+    }
+
+    private async Task signIn()
+    {
+        await initGun();
+        await JSR.InvokeVoidAsync("signIn", userName, password);
+        loggedIn = true;
+
+        /*if (turnOnLiveShareAfterLogin)
+        {
+            turnOnLiveShareAfterLogin = false;
+            await toggleLiveShare();
+            }
+        else
+        {*/
+                                                                                                            await Task.Delay(300);
+            await loadWorkspaces();
+            /*}*/
+
+            await JSR.InvokeVoidAsync("fillAndSubmitNativeLogin", userName, password);
+        }
+
+    private async Task signOut()
+    {
+        await JSR.InvokeVoidAsync("signOut", userName, password);
+        loggedIn = false;
+    }
+
+    private async Task register()
+    {
+        await JSR.InvokeVoidAsync("signUp", userName, password);
+    }
+
+
+    private async Task loadPrivate()
+    {
+        //Workspace workspace = await JSR.InvokeAsync<Workspace>("loadPrivate", PublicID, PublicKey, ShareKey);
+        //await setWorkspace(workspace);
+
+        await JSR.InvokeVoidAsync("loadPrivate", PublicID, PublicKey, ShareKey);
+    }
+
+    private async Task loadWorkspace(string workspaceName)
+    {
+        await JSR.InvokeVoidAsync("getWorkspace", workspaceName, state.ShareKey);
+    }
+
+    private async Task loadWorkspaces()
+    {
+        await JSR.InvokeVoidAsync("getWorkspaces", userName);
+    }
+
+
+
+    [JSInvokableAttribute("SetUserPublicKey")]
+    public async Task SetUserPublicKey(string key)
+    {
+        userPublicKey = key;
+    }
+
+    [JSInvokableAttribute("setWorkspaces")]
+    public async Task setWorkspaces(string recievedWorkspace)
+    {
+        if (!workspaces.Contains(recievedWorkspace))
+        { 
+            workspaces.Add(recievedWorkspace);
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokableAttribute("setWorkspace")]
+    public async Task setWorkspace(Workspace recievedworkspace)
+    {
+        await setWorkspaceHelper(recievedworkspace.appstate);
+
+        StateHasChanged();
+    }
+
+    [JSInvokableAttribute("setWorkspaceFromLiveShare")]
+    public async Task setWorkspaceFromLiveShare(string serializedEditorState)
+    {
+        await setWorkspaceHelper(serializedEditorState);
+
+        changeFromStream = true;
+    }
+
+    private async Task setWorkspaceHelper(string serializedEditorState)
+    {
+        AppState? tempState = AppState.Deserialize(serializedEditorState, localStorage);
+
+        if (tempState is null)
+        {
+            await jsInterop.GetConfirmation("Failed to load workspace. Serialized state string got corrupted.");
+            return;
+        }
+
+        prevState = state;
+        state = tempState; 
+
+        await jsInterop.SetMonacoContent(state.EditorText);
+
+        await reloadPackages();
+    }
+
+    #endregion
+
+
+    #region Other 
+
+    [JSInvokableAttribute("EditorContentChanged")]
+    public async Task EditorContentChanged(string ruleText) //Must be public for JSInterop to work.
+    {
+        state.EditorText = ruleText;
+
+        if (streamChanges)
+        {
+            if (changeFromStream)
+                changeFromStream = false;
+            else
+                await share();
+        }
+
+        if (runCodeOnChange)
+            await runCode();
+    }
+
+    private async Task resetEditorContent()
+    {
+        if (!await jsInterop.GetConfirmation("Are you sure you want to reset the editor contents?"))
+            return;
+
+        state.EditorText = AppState.DefaultEditorText;
+        await jsInterop.SetMonacoContent(state.EditorText);
+    }
+
+    private async Task downloadEditorContent()
+    {
+        await jsInterop.DownloadFile("Main.cs", "text/plain", state.EditorText);
+    }
+
+    #endregion
+
+
+    #region Nuget package methods
+
+    private async Task reloadPackages(bool isFirstLoad = false)
+    {
+        if (prevState is null)
+            return;
+
+        loadingNugetPackages = true;
+
+        //Get list of added packages and install them.
+        List<string> addedPackages;
+        if (isFirstLoad)
+            addedPackages = state.AddedNugetPackages.Keys.ToList();
+        else
+            addedPackages = state.AddedNugetPackages.Keys.Except(prevState?.AddedNugetPackages.Keys ?? Enumerable.Empty<string>()).ToList();
+
+        foreach (var package in addedPackages)
+        {
+            loadingNugetPackages = true;
+
+            await selectNugetPackage(package);
+
+            PackageVersion packageVersion = null;
+            IEnumerable<PackageVersion> versions = selectedPackage.Versions.Where(x => x.Version == state.AddedNugetPackages[package].PackageVersion);
+            if (versions.Count() > 0)
+            {
+                packageVersion = versions.First();
+                await installNugetPackage(packageVersion);
+            }
+            else
+            {
+                //Let user know there are no compatible versions?
+                //But this should never happen as incompatible nuget packages can't be added in the first place.
+            }
+        }
+
+        //On first load there is not going to be any packages to remove.
+        if (isFirstLoad)
+        {
+            loadingNugetPackages = false;    
+            return;
+        }
+
+        //Get list of removed packages.
+        List<string> removedPackages = prevState?.AddedNugetPackages.Keys.Except(state.AddedNugetPackages.Keys).ToList() ?? new List<string>();
+
+        foreach (var package in removedPackages)
+        {
+            loadingNugetPackages = true;
+
+            removeNugetPackage(package);
+        }
+
+        loadingNugetPackages = false;
+    }
+
+    private async Task queryNugetPackage(string nugetPackageName)
+    {
+        //Clear selection
+        selectedPackage = null;
+        selectedPackageVersion = null;
+        versions = Array.Empty<PackageVersion>();
+
+        //Get autocomplete package suggestions.
+        suggestions = await nugetLoader.QueryAutoComplete(nugetPackageName);
+        //Filter out already installed packages.
+        suggestions = suggestions.Where(x => !state.AddedNugetPackages.ContainsKey(x));
+
+        StateHasChanged();
+    }
+
+    private async Task selectNugetPackage(string selectedNugetPackageName)
+    {
+        var packageData = await nugetLoader.QueryPackageDetails(selectedNugetPackageName);
+
+        selectedPackage = packageData;
+
+        versions = packageData.Versions;
+
+        //Clear selection
+        suggestions = Array.Empty<string>();
+        nugetQueryTextBox = "";
+
+        StateHasChanged();
+    }
+
+    private async Task installNugetPackage(PackageVersion packageVersion)
+    {
+        selectedPackageVersion = packageVersion;
+
+        await compiler.InitializationTask; //Make sure ExistingReferences is filled before using it.
+
+        IEnumerable<(string name, Stream stream)> packageAndDependencies = null;
+        try
+        {
+            packageAndDependencies = await nugetLoader.GetPackageAndDependencies(packageVersion.Id, compiler.ExistingReferences);
+
+            if (packageAndDependencies?.Count() > 0)
+            {
+                compiler.AddLateReference(packageAndDependencies);
+                state.AddNugetPackage(selectedPackage.PackageId, packageVersion.Version);
+            }
+            else
+            {
+                await JSR.InvokeVoidAsync("alert", "Failed to install package. Please try again. Package not found, bad connection, unsupported TFM(target Framework Moniker) or other error.");
+
+                selectedPackage = null;
+                selectedPackageVersion = null;
+                versions = Array.Empty<PackageVersion>();
+            }
+
+            //Clear selection
+            versions = Array.Empty<PackageVersion>();
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JSR.InvokeVoidAsync("alert", $"Failed to install package. {ex.Message}");
+        }
+    }
+
+    private void removeNugetPackage(string packageName)
+    {
+        state.RemoveNugetPackage(packageName);
+
+        //TODO: Remove package from compiler references. The dependencies for the package should also be removed(unless needed by another package).
+        //The code should probably be changed so that we store the name+versions of all the dependencies that were added for a certain package.
+    }
+
+    #endregion
+
+
+    #region Compile, Resolve Dep., Run
+
+    private async Task runCode()
+    {
+        //This is used to prevent user spam clicks.
+        bool isStillRunning = showLoader;
+
+        showLoader = true;
+
+        await Task.Delay(1); //If not present the loader spinner won't render.
+
+        if (!isStillRunning)
+        {
+            await compileAndRun();
+            showLoader = false;
+            isStillRunning = false;
+        }
+    }
+
+
+    
+    private async Task compileAndRun()
+    {
+        outputs.Clear();
+
+        var writer = new StringWriter();
+        Console.SetOut(writer);
+
+        try
+        {
+            //Run compilation.
+            CompilationResult cr = await compiler.GetCompilation(state.EditorText, languageVersion, optimizationLevel);
+            //Set any messages to be listed in the UI.
+            messages = cr.Messages;
+
+            //If compilation failed, don't run the code.
+            if (!cr.Success)
+                return;
+
+
+            Assembly asm = null;
+
+            #region How not to load assemblies and run the compiled code. //////////////////////////////////////
+
+            //This doesn't work. The first line works if your assembly doesn't have any dependencies.
+            //If it does, you need to load them using LoadModule(), however this will throw a "NotImplemented.ByDesign" exception.
+            //Assembly asm = Assembly.Load(cr.AssemblyDLL);
+            //asm.LoadModule("Polly.Core", compiler.DynamicallyAddedDLLs["Polly.Core"]);
+
+            //So we need another approach. The old way was to use AppDomain.CurrentDomain.AssemblyResolve event.
+            //A custom assembly resolver needs to be used. But this is obsolete so use the ALC(AssemblyLoadContext) instead.
+            //AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembliesForCurrentDomain;
+            //Assembly asm = Assembly.Load(cr.AssemblyDLL);
+
+            //I will re-enable this as I'm having problems getting the console output with the ALC method.
+            AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembliesForCurrentDomain;
+            //Warning: I think this might cause memory leaks if the user keeps compiling and running code. https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability
+            //I already experienced and fixed such a problem with Assembly.Load() on a server in another project I was doing. But since this is on the client side let's hope the users will close and reopen the browser tab more often than they will compile and run code.
+            //I should fix this, but this project has been going on for way too long and has had way too much scope creep, so I just kinda want to finish it already.
+            asm = Assembly.Load(cr.AssemblyDLL); 
+
+            //Here are a few resources on the topic:
+            //https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support
+            //https://github.com/dotnet/runtime/blob/main/docs/design/features/assemblyloadcontext.md
+            //https://github.com/natemcmaster/DotNetCorePlugins/blob/v0.1.0/src/Plugins/PluginLoader.cs
+            //
+            //https://natemcmaster.com/blog/2017/12/21/netcore-primitives/
+            //https://tsuyoshiushio.medium.com/understanding-dynamic-assembly-loading-with-assemblyloadcontext-in-c-640ec82bff63
+
+            #endregion /////////////////////////////////////////////////////////////////////////////////////////
+
+
+            /*
+            //Load the compiled assembly using the ALC with a custom assembly dependency resolver.
+            PluginLoadContext loadContext = new PluginLoadContext(compiler.DynamicallyAddedDLLs, compiler.ReferencesDLLs);
+
+                using (MemoryStream ms = new MemoryStream())
+                {
+                //Write some text to a byte array.
+                byte[] text = cr.AssemblyDLL;
+                //Then write the byte array to the memory stream.
+                ms.Write(text, 0, text.Length);
+                //Rewind the stream to the beginning.
+                ms.Seek(0, SeekOrigin.Begin);
+
+                asm = loadContext.LoadFromStream(ms);
+            }
+            */
+
+
+            //Get the entry point and invoke it.
+            var entry = asm.EntryPoint;
+            if (entry.Name == "<Main>") //Sync wrapper over async Task Main
+                entry = entry.DeclaringType.GetMethod("Main", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static); // reflect for the async Task Main
+
+            var hasArgs = entry.GetParameters().Length > 0;
+            var result = entry.Invoke(null, hasArgs ? new object[] { new string[0] } : null);
+
+            //If the entry point is an async method, wait for it to finish.
+            if (result is Task t)
+            {
+                await t;
+
+                if (t.IsFaulted)
+                {
+                    //Get exception info.
+                    Exception ex = t.Exception;
+                    Exception innerEx = ex.InnerException;
+
+                    //Create error message.
+                    outputs.Add($"Execution error message: {innerEx.Message} StackTrace:{innerEx.StackTrace}");
+                }
+            }
+
+            string output = writer.ToString();
+            outputs.Add(output);
+        }
+        catch (Exception ex)
+        {
+            string errString = ex.ToString();
+            outputs.Add("Application Error: " + errString);
+        }
+    }
+
+    class PluginLoadContext : AssemblyLoadContext
+    {
+        private Dictionary<string, byte[]> dynamicallyAddedDLLs;
+        private Dictionary<string, byte[]> referencesDLLs;
+
+        public PluginLoadContext(Dictionary<string, byte[]> DynamicallyAddedDLLs, Dictionary<string, byte[]> ReferencesDLLs)
+        {
+            dynamicallyAddedDLLs = DynamicallyAddedDLLs;
+            referencesDLLs = ReferencesDLLs;
+        }
+
+        protected override Assembly Load(AssemblyName assemblyName)
+        {
+            if (dynamicallyAddedDLLs != null && dynamicallyAddedDLLs.Count > 0)
+            {
+                //
+                byte[] dll;
+                if (dynamicallyAddedDLLs.ContainsKey(assemblyName.Name))
+                    dll = dynamicallyAddedDLLs[assemblyName.Name];
+                else 
+                    dll = referencesDLLs[assemblyName.Name + ".dll"];
+
+                return Assembly.Load(dll);
+            }
+
+            return null;
+        }
+
+        protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
+        {
+            /*if (libraryPath != null)
+                {
+                return LoadUnmanagedDllFromPath(libraryPath);
+            }*/
+
+            return IntPtr.Zero;
+        }
+    }
+
+    [Obsolete("Use ALC instead.")]
+    private Assembly ResolveAssembliesForCurrentDomain(object sender, ResolveEventArgs args) 
+    {
+        string assemblyName = new AssemblyName(args.Name).Name;
+
+        if (compiler.DynamicallyAddedDLLs.ContainsKey(assemblyName))
+        {
+            Console.WriteLine(assemblyName);
+            return Assembly.Load(compiler.DynamicallyAddedDLLs[assemblyName]);
+        }
+
+        return null;
+    }
+
+    #endregion
+
+
+    #endregion ///////////////////////////////////////////////////////////////////////////////////
+}

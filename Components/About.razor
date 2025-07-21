@@ -1,0 +1,36 @@
+﻿@if (show)
+{
+    <div class="popupDiv popupZIndex_1">
+        <div class="col">
+            <div class="row mb-4">
+                <div class="col d-flex justify-content-start" style="font-size: large; font-weight: bold;">
+                    About
+                </div>
+
+                <div class="col d-flex justify-content-end">
+                    <button style="padding: 3px 10px; height: fit-content;" @onclick="() => { Show = !Show; }">X</button>
+                </div>
+            </div>
+
+            <div class="row">
+                <p>This is an online C# compiler that runs directly in your browser. So, your code won't be sent to a backend server to be compiled. This is achieved by utilizing Blazor WASM(WebAssembly), which allows us to make and run C# apps(including the Roslyn compiler APIs) in a browser.</p>
+                <p>Developed by <a href="https://eecs.blog">The EECS Blog</a></p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private bool show = false;
+    [Parameter]
+    public bool Show
+    {
+        get { return show; }
+        set 
+        { 
+            show = value; 
+            StateHasChanged(); 
+        }
+    }
+}

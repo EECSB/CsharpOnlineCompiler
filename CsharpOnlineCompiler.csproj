@@ -1,0 +1,63 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <PublishTrimmed>false</PublishTrimmed>
+    <WasmEnableWebcil>false</WasmEnableWebcil>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.0" PrivateAssets="all" />
+    
+    <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="8.0.0" />
+    
+    <PackageReference Include="Blazored.LocalStorage" Version="4.5.0" />
+    
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.11.0" />
+    <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="2.0.6" />
+    
+    <PackageReference Include="NuGet.Commands" Version="6.12.1" />
+    <PackageReference Include="NuGet.Configuration" Version="6.12.1" />
+    <PackageReference Include="NuGet.LibraryModel" Version="6.12.1" />
+    <PackageReference Include="NuGet.PackageManagement" Version="6.12.1" />
+    <PackageReference Include="NuGet.Protocol" Version="6.12.1" />
+    <PackageReference Include="NuGet.Repositories" Version="4.2.0" />
+    <PackageReference Include="NuGet.Resolver" Version="6.12.1" />
+    <PackageReference Include="NuGet.Versioning" Version="6.12.1" />
+    <PackageReference Include="NuGet.Packaging" Version="6.12.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\js\webpack-bundle\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="wwwroot\Node\**" />
+    <Content Remove="wwwroot\Node\**" />
+    <EmbeddedResource Remove="wwwroot\Node\**" />
+    <None Remove="wwwroot\Node\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\js\home\web_user\.nuget\NuGet\NuGet.Config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
+    <Exec Command="npm install" WorkingDirectory="NpmJS" />
+    <Exec Command="npm run build" WorkingDirectory="NpmJS" />
+  </Target>
+
+</Project>
