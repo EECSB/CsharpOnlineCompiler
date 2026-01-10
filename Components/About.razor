@@ -14,7 +14,13 @@
 
             <div class="row">
                 <p>This is an online C# compiler that runs directly in your browser. So, your code won't be sent to a backend server to be compiled. This is achieved by utilizing Blazor WASM(WebAssembly), which allows us to make and run C# apps(including the Roslyn compiler APIs) in a browser.</p>
-                <p>Developed by <a href="https://eecs.blog">The EECS Blog</a></p>
+                <p>
+                    I decided to use <a href="https://gun.js.org/" target="_blank" rel="noopener noreferrer">GUN.js</a>(decentralized graph database) to store the data and live share the code editor.
+                    The account and its data are saved to the GUN.js decentralized database. <b>Warning: I'm not hosting a relay node, so any data you save is reliant on public nodes, which may not store your data indefinitely.</b> You can add additional nodes under: Gun Nodes
+                </p>
+                <p>
+                    Developed by <a href="https://eecs.blog" target="_blank" rel="noopener noreferrer">The EECS Blog</a>, project <a href="https://github.com/EECSB/CsharpOnlineCompiler" target="_blank" rel="noopener noreferrer">Github repository</a>.
+                </p>
             </div>
         </div>
     </div>

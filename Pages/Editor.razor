@@ -790,22 +790,34 @@
             // Note: OnChange event is not copied; subscribers must re-subscribe as needed.
         }
 
+
+
+        //Dev. only: 'http://localhost:8765/gun'
+        //'https://gun-manhattan.herokuapp.com/gun' doesn't work anymore
+        //'https://eecs.blog/gun' I was trying to run my own node on my blog hosting server but I'm having problems with websockets.
+
+        //We use a public relay peers found at https://github.com/amark/gun/wiki/volunteer.dht
+        //For now just hardcode them.
+
+
+
+
         [JsonConstructor]
         public AppState() //Needed for JSON deserializer.
         {
-            gunNodes = new List<string> { "https://gun-manhattan.herokuapp.com/gun" /*local dev. node , "http://localhost:8765/gun"*/ };
-        } 
+            gunNodes = new List<string> { "https://gun.defucc.me/gun", "https://gun.o8.is/gun", "https://shogun-relay.scobrudot.dev/gun", "https://relay.peer.ooo/gun" };
+        }
 
         public AppState(Blazored.LocalStorage.ILocalStorageService localStorage)
         {
             workspace = new Guid().ToString();
-            workspace = "said"; //Temp. 
+            workspace = "myCSharpOnlineCompilerWorkspace";
             editorText = DefaultEditorText;
-            gunNodes = new List<string> { "https://gun-manhattan.herokuapp.com/gun" /*local dev. node , "http://localhost:8765/gun"*/ };
+            gunNodes = new List<string> { "https://gun.defucc.me/gun", "https://gun.o8.is/gun", "https://shogun-relay.scobrudot.dev/gun", "https://relay.peer.ooo/gun" };
 
             OnChange += async () =>
             {
-                await localStorage.SetItemAsStringAsync("appstate", this.ToString());
+                await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", this.ToString());
             };
         }
 
@@ -1366,9 +1378,9 @@ public class Program
     #region Other 
 
     [JSInvokableAttribute("EditorContentChanged")]
-    public async Task EditorContentChanged(string ruleText) //Must be public for JSInterop to work.
+    public async Task EditorContentChanged(string text) //Must be public for JSInterop to work.
     {
-        state.EditorText = ruleText;
+        state.EditorText = text;
 
         if (streamChanges)
         {

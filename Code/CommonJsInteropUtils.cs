@@ -53,7 +53,7 @@ namespace CsharpOnlineCompiler.Code
 
         public async Task DownloadFile(string fileName, string fileType, string value)
         {
-            await JSR.InvokeVoidAsync("BlazorDownloadFile", "SourceCode.cs", "text/plain", value);
+            await JSR.InvokeVoidAsync("BlazorDownloadFile", fileName, fileType, value);
         }
 
 
