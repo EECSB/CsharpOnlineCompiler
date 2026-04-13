@@ -1,4 +1,4 @@
-﻿@page "/testcomponent"
+﻿@page "/"
 
 @using Microsoft.CodeAnalysis;
 @using Microsoft.CodeAnalysis.CSharp;
@@ -690,7 +690,7 @@
         }
         else if (string.IsNullOrEmpty(PublicID) && string.IsNullOrEmpty(PublicKey) && string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && string.IsNullOrEmpty(SerializedEditorState))
         {
-            string storedState = await localStorage.GetItemAsStringAsync("appstate");
+            string storedState = await localStorage.GetItemAsStringAsync("CSharpOnlineCompilerAppState");
 
             if (string.IsNullOrEmpty(storedState))
             {
@@ -835,7 +835,7 @@
                 deserState = JsonSerializer.Deserialize<AppState>(SerializedEditorState);
                 deserState.OnChange += async () =>
                 {
-                    await localStorage.SetItemAsStringAsync("appstate", deserState.ToString());
+                    await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", deserState.ToString());
                 };
             }
             catch { }
