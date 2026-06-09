@@ -164,11 +164,8 @@ namespace CsharpOnlineCompiler.Code.NugetLoader
             dllStream.CopyTo(seekableStream);
             seekableStream.Position = 0;  // Reset position to the beginning
 
-            //
             packagesToInstall.Add((currentPackegeId, seekableStream));
             //yield return reader.GetStream(sortedVersions.First());
-
-
 
             //Get just the name without the full path.
             string bestFrameworkVersion = bestFrameworkVersionPath.Split("/")[1];
@@ -227,8 +224,6 @@ namespace CsharpOnlineCompiler.Code.NugetLoader
             {
                 return local_GetTfmPriority(tfm);
             }
-
-
 
             static float local_GetTfmPriority(string tfm)
             {

@@ -18,7 +18,7 @@ let lastUpdate; //Could be replaced by hash to use less memory, but it's probabl
 window.initGun = function (ref, nodes) {
     gunDotNetObjRef = ref;
 
-    gun = Gun(nodes);
+    gun = Gun({ peers: nodes, localStorage: false });
     user = gun.user();
 }
 

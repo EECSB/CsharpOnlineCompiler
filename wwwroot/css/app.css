@@ -171,3 +171,16 @@ button {
     .iconButton > img {
         padding-right: 0.5em;
     }
+
+.status-warning {
+    color: #c0392b;
+    background-color: #fdf0ef;
+    border: 1px solid #c0392b;
+    border-radius: 4px;
+    padding: 0.25em 1em;
+    margin: 0.25em auto;
+    font-size: 0.85em;
+    font-weight: bold;
+    text-align: center;
+    height: fit-content;
+}

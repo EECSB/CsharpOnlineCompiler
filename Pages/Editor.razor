@@ -616,7 +616,12 @@
     <!-- ///////////////////////////////////////// Bottom Row //////////////////////////////////////////// -->
 
     <div class="row row3 custom-border">
-        <!-- Content for the third row -->
+        @if (localStorageQuotaExceeded)
+        {
+            <div class="status-warning">
+                Warning: Your editor content is too large to save locally. Changes will not be restored on next visit. Use Share or Save to preserve your work.
+            </div>
+        }
     </div>
 
     <!-- ///////////////////////////////////////////////////////////////////////////////////////////////// -->
@@ -716,6 +721,11 @@
         {
             await jsInterop.GetConfirmation("Failed to load workspace because wrong/incompatible parameters were provided in the url.");
         }
+
+        state.OnQuotaExceeded += () => {
+            localStorageQuotaExceeded = true; 
+            InvokeAsync(StateHasChanged); 
+        };
 
         //Check if any new packages were added(or removed) to the workspace and add/remove them accordingly.
         await reloadPackages(true);
@@ -817,7 +827,14 @@
 
             OnChange += async () =>
             {
-                await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", this.ToString());
+                try
+                {
+                    await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", this.ToString());
+                }
+                catch (Microsoft.JSInterop.JSException)
+                {
+                    OnQuotaExceeded?.Invoke();
+                }
             };
         }
 
@@ -835,7 +852,14 @@
                 deserState = JsonSerializer.Deserialize<AppState>(SerializedEditorState);
                 deserState.OnChange += async () =>
                 {
-                    await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", deserState.ToString());
+                    try
+                    {
+                        await localStorage.SetItemAsStringAsync("CSharpOnlineCompilerAppState", deserState.ToString());
+                    }
+                    catch (Microsoft.JSInterop.JSException)
+                    {
+                        deserState.OnQuotaExceeded?.Invoke();
+                    }
                 };
             }
             catch { }
@@ -859,6 +883,7 @@
 
 
         public event Action? OnChange;
+        public event Action? OnQuotaExceeded;
         private void NotifyStateChanged() => OnChange?.Invoke();
 
         private string shareKey;
@@ -1045,6 +1070,7 @@ public class Program
 
 
     ///////////// Other variables /////////////
+    private bool localStorageQuotaExceeded = false;
     private AppState state = new AppState();
     private AppState? prevState = null;
     private JSInterop jsInterop;
