@@ -16,6 +16,39 @@
             base.setAttribute('href', window.location.pathname);
         }
     </script>
+    <script>
+        //localStorage writes are best-effort: a full quota (or storage disabled in private browsing) must
+        //never throw. An uncaught QuotaExceededError otherwise breaks the app mid-save — in a Blazor app it
+        //pops the framework's fatal-error bar even when the failure is otherwise handled. Wrap setItem here,
+        //before the app boots, to swallow the failure, warn, and fire an event the app can optionally handle.
+        (function () {
+            try {
+                var proto = window.Storage && window.Storage.prototype;
+
+                if (!proto || proto.__safeSetItem)
+                    return;
+
+                var original = proto.setItem;
+
+                proto.setItem = function (key, value) {
+                    try {
+                        return original.call(this, key, value);
+                    }
+                    catch (e) {
+                        console.warn('localStorage write failed (quota full or storage disabled): ' + key);
+
+                        try {
+                            window.dispatchEvent(new CustomEvent('storagequotaexceeded', { detail: { key: key } }));
+                        }
+                        catch (e2) { }
+                    }
+                };
+
+                proto.__safeSetItem = true;
+            }
+            catch (e) { }
+        })();
+    </script>
     <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
