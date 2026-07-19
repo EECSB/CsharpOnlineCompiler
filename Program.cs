@@ -14,6 +14,9 @@ namespace CsharpOnlineCompiler
 
             builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
             builder.Services.AddBlazoredLocalStorage();
+            //Back ILocalStorageService with IndexedDB (larger quota + compression) instead of localStorage.
+            //Registered after AddBlazoredLocalStorage so this implementation is the one resolved.
+            builder.Services.AddScoped<ILocalStorageService, IndexedDbLocalStorage>();
 
             await builder.Build().RunAsync();
         }
