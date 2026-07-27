@@ -663,11 +663,11 @@
     #region /////////////////////////////// Initialization ////////////////////////////////////////
 
     bool loadPrivateFromURL = false;
-    protected override async Task OnInitializedAsync()
+    //Works out which workspace to show — from the URL parameters when present, otherwise the saved state —
+    //and puts it in 'state'. Split out of OnInitializedAsync so the first render can await it before seeding
+    //Monaco; see the 'stateLoaded' field for why that ordering has to be forced.
+    private async Task LoadInitialStateAsync()
     {
-        compiler = new Compiler(client);
-        nugetLoader = new NugetLoader(compiler.ExistingReferences, compiler.References, client);
-
         //This could be written a bit better but good enough for now.
         if (!string.IsNullOrEmpty(PublicID) && !string.IsNullOrEmpty(PublicKey) && !string.IsNullOrEmpty(ShareKey) && string.IsNullOrEmpty(WorkspaceName) && string.IsNullOrEmpty(SerializedEditorState))
         {
@@ -721,6 +721,24 @@
         {
             await jsInterop.GetConfirmation("Failed to load workspace because wrong/incompatible parameters were provided in the url.");
         }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        compiler = new Compiler(client);
+        nugetLoader = new NugetLoader(compiler.ExistingReferences, compiler.References, client);
+
+        try
+        {
+            await LoadInitialStateAsync();
+        }
+        finally
+        {
+            //Signalled in a finally so a failed load still lets the first render bring the editor up empty,
+            //rather than leaving it waiting forever on a workspace that is never going to arrive. Released
+            //here, ahead of the package reload below, so the editor isn't held back by NuGet downloads.
+            stateLoaded.TrySetResult();
+        }
 
         state.OnQuotaExceeded += () => {
             localStorageQuotaExceeded = true; 
@@ -764,6 +782,11 @@
 
             await initGun();
             await jsInterop.SendObjectReference();
+
+            //Monaco is only seeded once, here, so it must not be created before the saved workspace has been
+            //read back — otherwise it comes up holding the empty default and the restored code is never shown.
+            await stateLoaded.Task;
+
             await jsInterop.InitializeMonaco(state.EditorText, "csharp");
 
             if (loadPrivateFromURL)
@@ -1073,6 +1096,13 @@ public class Program
     private bool localStorageQuotaExceeded = false;
     private AppState state = new AppState();
     private AppState? prevState = null;
+
+    //Completes once the saved workspace has been restored into 'state'. Reading it back is a genuinely async
+    //IndexedDB call, so the await in OnInitializedAsync yields and Blazor renders — and fires OnAfterRender —
+    //before the workspace has arrived. (The old localStorage read was synchronous under WebAssembly, so the
+    //await completed inline and the ordering happened to work out; moving to IndexedDB is what exposed this.)
+    //OnAfterRender waits on this before creating Monaco.
+    private readonly TaskCompletionSource stateLoaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     private JSInterop jsInterop;
     private Compiler compiler;
     private NugetLoader nugetLoader;
